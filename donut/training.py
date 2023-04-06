@@ -72,7 +72,7 @@ class DonutTrainer(VarScopeObject):
                  feed_dict=None, valid_feed_dict=None,
                  missing_data_injection_rate=0.01,
                  use_regularization_loss=True,
-                 max_epoch=256, max_step=None, batch_size=256,
+                 max_epoch=1, max_step=None, batch_size=256,
                  valid_batch_size=1024, valid_step_freq=100,
                  initial_lr=0.001, lr_anneal_epochs=10, lr_anneal_factor=0.75,
                  optimizer=tf.train.AdamOptimizer, optimizer_params=None,

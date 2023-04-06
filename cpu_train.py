@@ -119,7 +119,9 @@ def calc_p2p(predict, actual):
     #print(tp,fp,fn,f1)
     return f1, precision, recall, tp, tn, fp, fn
 
-def delay_point_adjust(predict, label, delay=7):
+def delay_point_adjust(score, label, thres,delay=7):
+
+    predict = score >= thres
     splits = np.where(label[1:] != label[:-1])[0] + 1
     is_anomaly = label[0] == 1
     new_predict = np.array(predict)
@@ -177,8 +179,7 @@ with tf.Session().as_default():
     print(max_f1,max_pre,max_recall)
     for i in range(0,grain+3):
         thres = (max_th-min_th)/grain*i+min_th
-        predict = test_score>=thres
-        predict = delay_point_adjust(predict,label,7)
+        predict = delay_point_adjust(test_score,label,thres,7)
         f1, precision, recall, tp, tn, fp, fn = calc_p2p(predict, label)
         if f1 > delay_f1:
             delay_f1 = f1
