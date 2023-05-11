@@ -91,7 +91,7 @@ class DonutPredictor(VarScopeObject):
         """
         return self._model
 
-    def get_score(self, values, missing=None):
+    def get_score(self, values, missing=None, file_num=None):
         """
         Get the `reconstruction probability` of specified KPI observations.
 
@@ -118,33 +118,44 @@ class DonutPredictor(VarScopeObject):
             values = np.asarray(values, dtype=np.float32)
             if len(values.shape) != 1:
                 raise ValueError('`values` must be a 1-D array')
-
-            # run the prediction in mini-batches
-            sliding_window = BatchSlidingWindow(
-                array_size=len(values),
-                window_size=self.model.x_dims,
-                batch_size=self._batch_size,
-            )
             if missing is not None:
                 missing = np.asarray(missing, dtype=np.int32)
                 if missing.shape != values.shape:
                     raise ValueError('The shape of `missing` does not agree '
                                      'with the shape of `values` ({} vs {})'.
                                      format(missing.shape, values.shape))
-                for b_x, b_y in sliding_window.get_iterator([values, missing]):
-                    feed_dict = dict(six.iteritems(self._feed_dict))
-                    feed_dict[self._input_x] = b_x
-                    feed_dict[self._input_y] = b_y
-                    b_r = sess.run(self._get_score(), feed_dict=feed_dict)
-                    collector.append(b_r)
-            else:
-                for b_x, in sliding_window.get_iterator([values]):
-                    feed_dict = dict(six.iteritems(self._feed_dict))
-                    feed_dict[self._input_x] = b_x
-                    b_r = sess.run(self._get_score_without_y(),
-                                   feed_dict=feed_dict)
-                    collector.append(b_r)
+
+            if file_num is not None:
+                file_num = file_num.astype(int)
+                print('prediction file_num', file_num)
+                values_sp = np.split(values, np.cumsum(file_num)[:-1])
+                values_list = np.array(values_sp)
+                missing = np.split(missing, np.cumsum(file_num)[:-1])
+                missing = np.array(missing)
+
+            for i, value in enumerate(values_list):
+                # run the prediction in mini-batches
+                sliding_window = BatchSlidingWindow(
+                    array_size=len(value),
+                    window_size=self.model.x_dims,
+                    batch_size=self._batch_size,
+                )
+                if missing is not None:
+                    for b_x, b_y in sliding_window.get_iterator([value, missing[i]]):
+                        feed_dict = dict(six.iteritems(self._feed_dict))
+                        feed_dict[self._input_x] = b_x
+                        feed_dict[self._input_y] = b_y
+                        b_r = sess.run(self._get_score(), feed_dict=feed_dict)
+                        collector.append(b_r)
+                else:
+                    for b_x, in sliding_window.get_iterator([value]):
+                        feed_dict = dict(six.iteritems(self._feed_dict))
+                        feed_dict[self._input_x] = b_x
+                        b_r = sess.run(self._get_score_without_y(),
+                                       feed_dict=feed_dict)
+                        collector.append(b_r)
 
             # merge the results of mini-batches
             result = np.concatenate(collector, axis=0)
+            # print(result)
             return result

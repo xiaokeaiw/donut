@@ -14,6 +14,8 @@ from .utils import BatchSlidingWindow
 
 __all__ = ['DonutTrainer']
 
+np.set_printoptions(threshold=np.inf)
+
 
 class DonutTrainer(VarScopeObject):
     """
@@ -72,7 +74,7 @@ class DonutTrainer(VarScopeObject):
                  feed_dict=None, valid_feed_dict=None,
                  missing_data_injection_rate=0.01,
                  use_regularization_loss=True,
-                 max_epoch=256, max_step=None, batch_size=256,
+                 max_epoch=30, max_step=None, batch_size=512,
                  valid_batch_size=1024, valid_step_freq=100,
                  initial_lr=0.001, lr_anneal_epochs=10, lr_anneal_factor=0.75,
                  optimizer=tf.train.AdamOptimizer, optimizer_params=None,
@@ -186,7 +188,7 @@ class DonutTrainer(VarScopeObject):
         return self._model
 
     def fit(self, values, labels, missing, mean, std, excludes=None,
-            valid_portion=0.3, summary_dir=None):
+            valid_portion=0.3, summary_dir=None, file_num=None):
         """
         Train the :class:`Donut` model with given data.
 
@@ -226,6 +228,60 @@ class DonutTrainer(VarScopeObject):
                              'the shape of `values` ({} vs {})'.
                              format(missing.shape, values.shape))
 
+        # 对每个数据分一下
+        if file_num is not None:
+            file_num = file_num.astype(int)
+            values_sp = np.split(values, np.cumsum(file_num)[:-1])
+            values_list = np.array(values_sp)
+            labels = np.split(labels, np.cumsum(file_num)[:-1])
+            labels = np.array(labels)
+            missing = np.split(missing, np.cumsum(file_num)[:-1])
+            missing = np.array(missing)
+
+        # print('values_list',list(values_list))
+
+        train_values = np.array([])
+        train_labels = np.array([])
+        train_missing = np.array([])
+        valid_labels = np.array([])
+        valid_missing = np.array([])
+        v_x = np.array([])
+        v_y = np.array([])
+        train_excludes = np.full(len(values), False)
+        valid_excludes = np.full(len(values), False)
+
+        train_num = 0
+        valid_num = 0
+
+        for i, value in enumerate(values_list):
+            n = int(len(value) * valid_portion)
+            train_values_now, v_x_now = value[:-n], value[-n:]
+            train_labels_now, valid_labels_now = labels[i][:-n], labels[i][-n:]
+            train_missing_now, valid_missing_now = missing[i][:-n], missing[i][-n:]
+            v_y_now = np.logical_or(valid_labels_now, valid_missing_now).astype(np.int32)
+
+            train_values = np.append(train_values, train_values_now)
+            v_x = np.append(v_x, v_x_now)
+            train_labels = np.append(train_labels, train_labels_now)
+            valid_labels = np.append(valid_labels, valid_labels_now)
+            train_missing = np.append(train_missing, train_missing_now)
+            valid_missing = np.append(valid_missing, valid_missing_now)
+            v_y = np.append(v_y, v_y_now)
+
+            train_num += len(train_values_now)
+            valid_num += len(v_x_now)
+            train_excludes[train_num - 1] = True
+            valid_excludes[valid_num - 1] = True
+            print(i, 'train_num', train_num)
+            print(i, 'valid_num', valid_num)
+
+        train_excludes = train_excludes[:len(train_values)]
+        valid_excludes = valid_excludes[:len(v_x)]
+        where_excludes = np.where(train_excludes)[0]
+
+        print('where_excludes', where_excludes)
+
+        '''
         n = int(len(values) * valid_portion)
         train_values, v_x = values[:-n], values[-n:]
         train_labels, valid_labels = labels[:-n], labels[-n:]
@@ -235,6 +291,7 @@ class DonutTrainer(VarScopeObject):
             train_excludes, valid_excludes = None, None
         else:
             train_excludes, valid_excludes = excludes[:-n], excludes[-n:]
+        '''
 
         # data augmentation object and the sliding window iterator
         aug = MissingDataInjection(mean, std, self._missing_data_injection_rate)
